@@ -668,7 +668,12 @@ spawnScribeWorker (Scribe write _) queue = Async.async go
         NewItem a  -> do
           -- Swallow any direct exceptions from the
           -- scribe. safe-exceptions won't catch async exceptions.
-          void (tryAny (write a))
+          result <- tryAny (write a)
+          case result of
+            Left e ->
+              print e
+            Right _ ->
+              pure ()
           go
         PoisonPill -> return ()
 
@@ -896,7 +901,12 @@ logItem a ns loc sev msg = do
         <*> _logEnvTimer
         <*> pure (_logEnvApp <> ns)
         <*> pure loc
-      FT.forM_ (M.elems _logEnvScribes) $ \ ScribeHandle {..} -> atomically (tryWriteTBQueue shChan (NewItem item))
+      FT.forM_ (M.elems _logEnvScribes) $ \ ScribeHandle {..} ->
+        do result <- atomically (tryWriteTBQueue shChan (NewItem item))
+           if not result then
+            print ("ERROR! could not write a log item to the Katip write queue" <> show (item { _itemPayload = toObject a }))
+           else
+            pure ()
 
 
 -------------------------------------------------------------------------------
